@@ -1,0 +1,123 @@
+---
+title: "Basin Goro Circuit"
+author: "Gregory Jefferis"
+date: "21 May 2015"
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K640m",
+      "-RTS"
+    ]
+---
+
+# Preface
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+What you will see in the rest of the document is a mixture of text and R code
+along with the visualisations and analysis produced from that code. You can 
+compile the whole document to an HTML document by hitting **Knit HTML** in 
+RStudio. You can also explore what is happening by running code interactively 
+line by line in an R console.
+
+# Setup
+## Installation
+Before running this script, you need to install packages. It's a good idea to do
+this from an interactive R session in case of any problems. This code block will
+not be run when you click Knit HTML, but you can copy paste into your RStudio or
+other R terminal.
+
+```{r install, eval=F}
+# install standard package from CRAN
+install.packages(c("nat.nblast","stringr","dendroextras","knitr"))
+
+# install catmaid package from github with devtools
+if (!require("devtools")) install.packages("devtools")
+devtools::install_github("jefferis/rcatmaid")
+```
+
+
+
+## Load packages
+First let's do some basic setup, loading the necessary R packages.
+```{r setup, results='hide', message=FALSE}
+library(catmaid)
+library(nat.nblast)
+library(stringr)
+library(dendroextras)
+library(knitr)
+
+# so that we can make snapshots of 3d plots or include interactive 3d
+knit_hooks$set(rgl=hook_rgl, webgl=hook_webgl)
+```
+
+# Data
+## Load Data
+Now let's fetch the neuron data along with the brain surface model
+
+```{r data, cache=FALSE, results='hide'}
+# neurons
+bgc=readRDS("BasinGoroCells.rds")
+
+# surface mesh
+l1surf=readRDS("l1surf.rds")
+l1mesh=readRDS("l1mesh.rds")
+```
+
+
+Let's make some metadata including establishing the side of brain, storing this
+as an extra column in the attached data.frame
+```{r metadata}
+# fix data.frames
+bgc[,'side']=str_match(str_match(bgc[,'name'],'[at][1-9][lr]|[LRlr]$'), "[LRlr]")
+bgc[,'side']=factor(toupper(bgc[,'side']))
+```
+
+## Basic plot of data
+Let's make a plot where we just colour neurons by side of brain (as determined by 
+soma location).
+```{r prelim plot3d, rgl=TRUE}
+# nb don't plot synapses (WithConne=F) and do plot somata (r=2000 nm)
+clear3d();plot3d(bgc, col=side, WithConne=F,soma=2000)
+view3d(270,-90, fov=0, zoom=.65)
+```
+
+# NBLAST
+
+We're going to try using NBLAST with these data. We need to convert them to 
+the `dotprops` format. We convert the neurons from nanometre to micron spatial
+units and resample every 1 µm.
+
+```{r, results='hide', cache=TRUE}
+# convert from nm to microns 
+bgc.dps=dotprops(bgc/1000, resample=1, .progress='text')
+```
+
+We'll compute all by all nblast scores and use them for clustering.
+```{r nblast all by all}
+bgsmat=nblast_allbyall(bgc.dps)
+bghc=nhclust(scoremat = bgsmat)
+plot(bghc)
+
+# make a copy and label with name rather than skid
+bghc2=bghc
+bghc2$labels=with(bgc, name)
+# cut the 
+bghcd=colour_clusters(bghc2, h=2)
+par(mar=c(8,4,4,2))
+plot(bghcd)
+```
+
+```{r plot3d by cluster, rgl=TRUE}
+open3d();wire3d(l1mesh, col='grey', size=.1)
+view3d(270,-90, fov=0, zoom=.65)
+plot3d(bghc, db=bgc, h=2, WithC=F, soma=2e3)
+```
+
+Try plotting with points rather than mesh and output as interactive webgl canvas:
+
+```{r, webgl=TRUE}
+open3d();points3d(l1surf, col='grey', size=.1)
+plot3d(bghc, db=bgc, h=2, WithC=F, soma=2e3)
+view3d(270, 0)
+```
+
