@@ -1,0 +1,168 @@
+---
+title: "Monarch Central Complex Neurons"
+author: "Gregory Jefferis"
+date: "2 August 2015"
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K640m",
+      "-RTS"
+    ]
+---
+
+# Preface
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+What you will see in the rest of the document is a mixture of text and R code
+along with the visualisations and analysis produced from that code. You can 
+compile the whole document to an HTML document by hitting **Knit HTML** in 
+RStudio. You can also explore what is happening by running code interactively 
+line by line in an R console.
+
+# Setup
+## Installation
+Before running this script, you need to install packages. It's a good idea to do
+this from an interactive R session in case of any problems. This code block will
+not be run when you click Knit HTML, but you can copy paste into your RStudio or
+other R terminal.
+
+```{r install, eval=F}
+# install standard package from CRAN
+if(!require('nat.nblast')) install.packages("nat.nblast")
+if(!require('rvest')) install.packages("rvest")
+if(!require('knitr')) install.packages("knitr")
+if(!require('stringr')) install.packages("stringr")
+if(!require('dendextend')) install.packages("dendextend")
+```
+
+## Load packages
+First let's do some basic setup, loading the necessary R packages.
+```{r setup, results='hide', message=FALSE}
+library(nat)
+library(nat.nblast)
+library(stringr)
+library(dendextend)
+library(knitr)
+
+# so that we can make snapshots of 3d plots or include interactive 3d
+knit_hooks$set(rgl=rgl::hook_rgl, webgl=rgl::hook_webgl)
+```
+
+# Data
+## Define functions
+We need to define a function to read neurons from the insect brain db website
+
+```{r read.tedore.neuron}
+#' read a neuron from the insectbraindb/tedore.net site
+#' @param x Either a neuron number or a full url to the summary page of a neuron
+#' @param baseurl base url for the insectbraindb website
+#' @param ... additional arguments passed to read.neuron
+#' @examples
+#' nn=read.neurons()
+read.tedore.neuron<-function(x, baseurl="http://www.tedore.net/", ...) {
+  # complete url for input spec if required
+  if(is.character(x) && substr(x,1,4)=="NIN-") {
+   x=as.numeric(substr(x, 5, nchar(x)))
+  }
+  if(is.numeric(x)){
+    nid=x
+    x=file.path(file.path(baseurl,"neurons"),x,"")
+  } else {
+    # the numeric id for the neuron should be the last part of url
+    nid=basename(x)
+  }
+
+  # get all possible html nodes
+  h=rvest::html(x)
+  nn=rvest::html_nodes(h,'.dl-horizontal')
+
+  # subset node with 3d model info
+  n3d=grepl("3-D model",rvest::html_text(nn) )
+  if(!any(n3d))
+    stop("No 3d model available")
+
+  # now find url for the 3d model
+  n=nn[[which(n3d)]]
+  url=rvest::html_attr(rvest::html_nodes(n,'a'),'href')
+  url=file.path(baseurl, url)
+  if(!length(url)) {
+    # hmm that didn't work, let's look at all the nodes
+    nt=rvest::html_text(rvest::html_nodes(n, "dd, dt"))
+    model_node=grep("3-D model", nt)
+    filename=nt[model_node+1]
+    if(length(filename)) url=file.path(baseurl,"media/neurons",nid,"reconstruction", filename)
+  }
+  if(!length(url))
+    stop("Unable to find unique url for 3d neuron model")
+  
+  nat::read.neuron(url, ...)
+}
+```
+
+
+## Load Data
+Now let's use that function to fetch the neuron data. We'll start by making a
+table containing information about all the neurons. 
+
+```{r data, cache=TRUE, results='hide'}
+library(rvest)
+# table of information about available neurons
+neurons_table=html_table(html("http://www.tedore.net/neurons/"), header=T)[[1]]
+# tidy up column / row names for R
+names(neurons_table)=make.names(names(neurons_table))
+rownames(neurons_table)=neurons_table$Identification.Number
+
+message("Downloading ", nrow(neurons_table), " neurons")
+tedoren=nlapply(neurons_table$Identification.Number, read.tedore.neuron, 
+                .progress='text', OmitFailures=F)
+names(tedoren)=neurons_table$Identification.Number
+
+# attach data.frame to neuronlist object...
+data.frame(tedoren)=neurons_table
+
+# then keep only good neurons / metadata
+actual_neurons=sapply(tedoren, is.neuron)
+message("Keeping ", sum(actual_neurons)," valid neurons!")
+tedoren=tedoren[actual_neurons]
+
+# make species a factor (since there are only a few distinct values)
+tedoren[,'Species']=factor(tedoren[,'Species'])
+```
+
+Now let's fetch the surface model. Options to read the wavefront obj format in 
+which this is encoded have only recently become available.
+
+```{r surface model, cache=TRUE}
+# newest versions of rgl package can read wavefront obj files.
+if(exists("readOBJ", 'package:rgl')){
+  if(!file.exists('monarch_brain_optimized_hh1SWlD.obj'))
+    download.file("http://www.tedore.net/media/brain-models/5/monarch_brain_optimized_hh1SWlD.obj", 
+                  destfile = 'monarch_brain_optimized_hh1SWlD.obj')
+  monarch_cc.surf=rgl::readOBJ("monarch_brain_optimized_hh1SWlD.obj")
+} else {
+  # get a cached copy from flybrain website
+  download.file("http://flybrain.mrc-lmb.cam.ac.uk/si/nblast/nat.examples/07-insectbraindb/monarch_cc.rds", "monarch_cc.rds")
+  monarch_cc.surf=readRDS("monarch_cc.rds")
+}
+```
+
+## Basic plot of data
+Let's make a plot where we just colour neurons by side of brain (as determined by 
+soma location).
+```{r prelim plot3d, rgl=TRUE}
+library(nat)
+clear3d()
+# nb plot slightly thicker lines and use a radius of 5 µm for the soma
+plot3d(subset(tedoren, Species=="Danaus plexippus"), lwd=2, soma=5)
+view3d(270,-90, fov=0, zoom=.65)
+```
+
+# NBLAST
+Try plotting with points rather than mesh and output as interactive webgl canvas:
+
+```{r, webgl=TRUE}
+open3d();points3d(l1surf, col='grey', size=.1)
+plot3d(bghc, db=bgc, h=2, WithC=F, soma=2e3)
+view3d(270, 0)
+```
+
