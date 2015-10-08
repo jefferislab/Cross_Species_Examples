@@ -1,0 +1,198 @@
+---
+title: "Zebrafish mitral cells"
+author: "Gregory Jefferis"
+date: "8 October 2015"
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K640m",
+      "-RTS"
+    ]
+---
+
+# Preface
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents.
+For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+What you will see in the rest of the document is a mixture of text and R code along with the visualisations and analysis produced from that code.
+You can compile the whole document to an HTML document by hitting **Knit HTML** in RStudio.
+You can also explore what is happening by running code interactively line by line in an R console.
+
+# Setup
+## Installation
+Before running this script, you need to install packages.
+It's a good idea to do this from an interactive R session in case of any problems.
+This code block will not be run when you click Knit HTML, but you can copy paste into your RStudio or other R terminal.
+
+```{r install, eval=F}
+# install standard package from CRAN
+if(!require('nat')) install.packages("nat")
+if(!require('devtools')) install.packages("devtools")
+if(!require('nat.nblast')) devtools::install_github('jefferislab/nat.nblast')
+if(!require('stringr')) install.packages("stringr")
+if(!require('dendroextras')) install.packages("dendroextras")
+```
+
+## Load packages
+First let's do some basic setup, loading the necessary R packages.
+```{r setup, results='hide', message=FALSE}
+library(nat)
+library(nat.nblast)
+library(stringr)
+library(dendroextras)
+library(knitr)
+
+# so that we can make snapshots of 3d plots or include interactive 3d
+knit_hooks$set(rgl=hook_rgl, webgl=hook_webgl)
+```
+
+# Data
+## Load data
+We need to download the neuron traces from the web.
+```{r data-download, cache=TRUE, results='hide'}
+urls <- "http://flybrain.mrc-lmb.cam.ac.uk/si/nat/miyasaka/pruned-traces.zip"
+
+message("Downloading data (1.6 MB) if necessary...")
+for (url in urls){
+  localfile <- basename(url)
+  if(file.exists(localfile)) next
+  message("Downloading ", url, "...")
+  t <- try(download.file(url,localfile))
+  if(inherits(t, 'try-error')) {
+    message("Unable to download ", url)
+    next
+  }
+}
+
+message("Unzipping")
+unzip("pruned-traces.zip")
+```
+
+Let's load up these traces.
+```{r load-traces, cache=TRUE}
+swcs=dir("pruned-swc")
+if(!length(swcs)) stop("No traces found! See 01-download-zips.R!")
+
+df=data.frame(name=sub("\\.swc","",basename(swcs)),
+  gene=factor("lhx2a", levels=c("lhx2a", "tbx21")),
+  stringsAsFactors=FALSE)
+df$cluster=factor(sub("([a-zA-Z]+)-.*","\\1",df$name))
+df$gene[grep("-T",df$name)]="tbx21"
+rownames(df)=df$name
+zm=read.neurons("pruned-swc", neuronnames = df$name, df=df)
+```
+
+As a check, let's plot all neurons from one cluster, coloured by transgene.
+```{r plot-cluster-transgene, rgl=TRUE}
+open3d()
+plot3d(zm, cluster=='mdG', col=gene, lwd=2, soma=T)
+```
+
+## Mirror data
+We should mirror all neurons past middle of x range, for better comparison later.
+```{r mirror, cache=TRUE}
+mid_x <- 248.857/2
+root_xs<-sapply(zm,function(x) x$d$X[x$StartPoint])
+neurons_to_mirror <- names(root_xs[root_xs > mid_x])
+zm.unmirrored <- zm
+zm[neurons_to_mirror] <- mirror(zm[neurons_to_mirror], warpfile="mirroring_registration.list/", mirrorAxisSize=248.857)
+```
+
+# NBLAST
+We should first resample our neurons to 1 micron spacing, convert to ``dotprops`` objects and tidy up class names.
+```{r resample, cache=TRUE}
+zmdps <- dotprops(zm, k=5, resample=1)
+zm_class <- sub("-", "", str_match(names(zm), "[A-z]*-T?L?"))
+```
+
+Let's calculate NBLAST scores, discarding self matches.
+```{r nblast}
+zm_res <- nblast(zmdps, zmdps)
+zm_res_norm <- scale(zm_res, center=FALSE, scale=diag(zm_res))
+zm_res_mean <- (zm_res_norm + t(zm_res_norm)) / 2
+diag(zm_res_norm) <- NA
+diag(zm_res_mean) <- NA
+```
+
+Now convert NBLAST scores to lists and sort.
+```{r nblast-sort}
+zm_res_list <- apply(zm_res_norm, 2, list)
+zm_res_list <- lapply(zm_res_list, function(x) sort(x[[1]], decreasing=TRUE))
+zm_res_list <- zm_res_list[order(sapply(zm_res_list, function(x) x[[1]]), decreasing=TRUE)]
+
+zm_res_mean_list <- apply(zm_res_mean, 2, list)
+zm_res_mean_list <- lapply(zm_res_mean_list, function(x) sort(x[[1]], decreasing=TRUE))
+zm_res_mean_list <- zm_res_mean_list[order(sapply(zm_res_mean_list, function(x) x[[1]]), decreasing=TRUE)]
+```
+
+Convert scores to distances and hierarchically cluster.
+```{r hclust, dev='pdf'}
+zm_res_mean_dist <- 1 - zm_res_mean
+diag(zm_res_mean_dist) <- 0
+zm_res_mean_dist <- as.dist(zm_res_mean_dist)
+zm_clust <- hclust(zm_res_mean_dist)
+zm_dend <- as.dendrogram(zm_clust)
+
+zm_cols <- c(maG="#3635fd", dG="#f08380", vaG="#df20be", lG="#6e9d3f", vpG="#6a6d26", mdGT="#87b3d8", mdGL="#dea76f", vmG="#454545")
+par(mar=c(3,1,1,5))
+zm_dend_col=set_leaf_colors(zm_dend, structure(zm_cols[zm_class],.Names=names(zm)), col_to_set='label')
+zm_dend_col=color_clusters(zm_dend_col,k=4,col=rep('black',4),groupLabels=as.roman)
+plot(zm_dend_col, horiz=TRUE)
+```
+
+# Masked neurons
+Miyasaka et al analyse the projection patterns in two domains.
+```{r bounding-boxes, cache=TRUE}
+mask.box=read.im3d("mask-box.nrrd",ReadByteAsRaw=TRUE)
+mask.box.coords=imexpand.grid(mask.box)[mask.box>0,]
+mask.box.bbox=apply(mask.box.coords,2,range)
+
+mask.box.vTel=read.im3d("mask-box-vTel.nrrd",ReadByteAsRaw=TRUE)
+mask.box.vTel.coords=imexpand.grid(mask.box.vTel)[mask.box.vTel>0,]
+mask.box.vTel.bbox=apply(mask.box.vTel.coords,2,range)
+
+bbox2sel3d<-function(b) {
+  rfun<-function(x, y=NULL, z=NULL) with(xyz.coords(x,y,z), b[1,1]<=x & x<=b[2,1] & b[1,2]<=y & y<=b[2,2] & b[1,3]<=z & z<=b[2,3])
+}
+```
+
+Let's mask our neurons to match.
+```{r mask, cache=TRUE}
+zm.mask=nlapply(zmdps, function(x) subset(x, bbox2sel3d(mask.box.bbox)))
+zm.mask.vTel=nlapply(zmdps, function(x) subset(x, bbox2sel3d(mask.box.vTel.bbox)))
+```
+
+Let's redo our NBLAST comparison using the masked neurons, discarding self-matches.
+```{r nblast-masked, cache=TRUE}
+zm_res_masked <- nblast(zm.mask, zm.mask)
+zm_res_norm_masked <- scale(zm_res_masked, center=FALSE, scale=diag(zm_res_masked))
+zm_res_mean_masked <- (zm_res_norm_masked + t(zm_res_norm_masked)) / 2
+diag(zm_res_norm_masked) <- NA
+diag(zm_res_mean_masked) <- NA
+```
+
+Now convert NBLAST scores to lists and sort.
+```{r nblast-masked-sort}
+zm_res_list_masked <- apply(zm_res_norm_masked, 2, list)
+zm_res_list_masked <- lapply(zm_res_list_masked, function(x) sort(x[[1]], decreasing=TRUE))
+zm_res_list_masked <- zm_res_list_masked[order(sapply(zm_res_list_masked, function(x) x[[1]]), decreasing=TRUE)]
+
+zm_res_mean_list_masked <- apply(zm_res_mean_masked, 2, list)
+zm_res_mean_list_masked <- lapply(zm_res_mean_list_masked, function(x) sort(x[[1]], decreasing=TRUE))
+zm_res_mean_list_masked <- zm_res_mean_list_masked[order(sapply(zm_res_mean_list_masked, function(x) x[[1]]), decreasing=TRUE)]
+```
+
+Convert scores to distances and hierarchically cluster.
+```{r masked-hclust, dev='pdf'}
+zm_res_mean_dist_masked <- 1 - zm_res_mean_masked
+diag(zm_res_mean_dist_masked) <- 0
+zm_res_mean_dist_masked <- as.dist(zm_res_mean_dist_masked)
+zm_clust_masked <- hclust(zm_res_mean_dist_masked)
+zm_dend_masked <- as.dendrogram(zm_clust_masked)
+
+zm_cols <- c(maG="#3635fd", dG="#f08380", vaG="#df20be", lG="#6e9d3f", vpG="#6a6d26", mdGT="#87b3d8", mdGL="#dea76f", vmG="#454545")
+par(mar=c(3,1,1,5))
+zm_dend_col_masked=set_leaf_colors(zm_dend_masked, structure(zm_cols[zm_class],.Names=names(zm)), col_to_set='label')
+zm_dend_col_masked=color_clusters(zm_dend_col_masked,k=4,col=rep('black',4),groupLabels=as.roman)
+plot(zm_dend_col_masked, horiz=TRUE)
+```
