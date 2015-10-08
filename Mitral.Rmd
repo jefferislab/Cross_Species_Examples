@@ -31,6 +31,7 @@ if(!require('devtools')) install.packages("devtools")
 if(!require('nat.nblast')) devtools::install_github('jefferislab/nat.nblast')
 if(!require('stringr')) install.packages("stringr")
 if(!require('dendroextras')) install.packages("dendroextras")
+if(!require('dendextend')) install.packages("dendextend")
 ```
 
 ## Load packages
@@ -40,6 +41,7 @@ library(nat)
 library(nat.nblast)
 library(stringr)
 library(dendroextras)
+library(dendextend)
 library(knitr)
 
 # so that we can make snapshots of 3d plots or include interactive 3d
@@ -87,9 +89,10 @@ zm[,'class']=sub("-", "", zm[,'class'])
 ```
 
 As a check, let's plot all neurons from one cluster, coloured by transgene.
-```{r plot-cluster-transgene, rgl=TRUE}
+```{r plot-cluster-transgene, rgl=TRUE, cache=TRUE}
 open3d()
 plot3d(zm, cluster=='mdG', col=gene, lwd=2, soma=T)
+par3d(zoom=0.6)
 ```
 
 ## Mirror data
@@ -129,7 +132,7 @@ zm_clust <- nhclust(scoremat=zm_res)
 ```
 
 Now let's make some nice dendrograms
-```{r hclust, dev='pdf'}
+```{r hclust, dev=c('png','pdf'), cache=TRUE, fig.height=10}
 zm_dend <- as.dendrogram(zm_clust)
 
 zm_cols <- c(maG="#3635fd", dG="#f08380", vaG="#df20be", lG="#6e9d3f", vpG="#6a6d26", mdGT="#87b3d8", mdGL="#dea76f", vmG="#454545")
@@ -159,7 +162,7 @@ zm.mask.vTel=zm.mask.vTel[npoints>=5]
 ```
 
 Let's see which neurons sit within each region. pTel is the larger region.
-```{r plot-masks, rgl=TRUE}
+```{r plot-masks, rgl=TRUE, cache=TRUE}
 clear3d()
 plot3d(zm, col=factor(class), colpal=zm_cols, lwd=2)
 plot3d(boundingbox(mask.box.bbox))
@@ -171,14 +174,14 @@ par3d(userMatrix=structure(c(0.439136028289795, -0.0738524496555328, 0.895379900
 ```
 
 ### pTel mask only
-Let's redo our NBLAST comparison using the pTel masked neurons
+Let's redo our NBLAST comparison using the pTel masked neurons. Compare with Fig 3b
+
 ```{r nblast-pTel, cache=TRUE}
 zm_res_pTel <- nblast_allbyall(zm.mask)
 zm_clust_pTel <- nhclust(scoremat=zm_res_pTel)
 ```
 
-Convert scores to distances and hierarchically cluster.
-```{r pTel-hclust, dev='pdf'}
+```{r pTel-hclust, dev=c('png','pdf'), cache=TRUE, fig.height=10}
 zm_dend_pTel <- as.dendrogram(zm_clust_pTel)
 zm_dend_col_pTel=set_leaf_colors(zm_dend_pTel, structure(zm_cols[zm[,'class']],.Names=names(zm)), col_to_set='label')
 zm_dend_col_pTel=color_clusters(zm_dend_col_pTel,k=4,col=rep('black',4),groupLabels=as.roman)
@@ -187,6 +190,11 @@ labels(zm_dend_col_pTel)=zm[labels(zm_dend_col_pTel),'class']
 plot(rev(zm_dend_col_pTel), horiz=TRUE)
 ```
 
+There is broad similaity in the clustering. For example vmG and mdGL/T neurons
+are predominantly in clusters III/IV wheras maG,dG, vaG, IG, vPG are in the first clusters.
+One main effect on clustering are the habenular projections, but other organisational
+features are highlighted by our large scale clustering later on in this report.
+
 ### vTel mask only
 Let's redo our NBLAST comparison using the vTel masked neurons
 ```{r nblast-vTel, cache=TRUE}
@@ -194,12 +202,94 @@ zm_res_vTel <- nblast_allbyall(zm.mask.vTel)
 zm_clust_vTel <- nhclust(scoremat=zm_res_vTel)
 ```
 
-Convert scores to distances and hierarchically cluster.
-```{r vTel-hclust, dev='pdf'}
+```{r vTel-hclust, dev=c('png','pdf'), cache=TRUE, fig.height=10}
 zm_dend_vTel <- as.dendrogram(zm_clust_vTel)
 zm_dend_col_vTel=set_leaf_colors(zm_dend_vTel, structure(zm_cols[zm.mask.vTel[,'class']],.Names=names(zm.mask.vTel)), col_to_set='label')
 zm_dend_col_vTel=color_clusters(zm_dend_col_vTel,k=4,col=rep('black',4),groupLabels=as.roman)
 labels(zm_dend_col_vTel)=zm[labels(zm_dend_col_vTel),'class']
 # to match ordering in Miyasaka et al
 plot(rev(zm_dend_col_vTel), horiz=TRUE)
+```
+
+There may be some local similarities, but we would really need to identify the
+individual neurons in the original clustering in panel 3c to compare with this
+clustering. There is co-clustering of e.g. a pair of dG neurons which appear to
+be the most similar in both Fig 3c and our new clustering.
+
+## Pairwise comparisons of groups
+```{r, echo=FALSE}
+options('nat.default.neuronlist' = 'zm')
+
+# Set a nice default view
+par3d(userMatrix=structure(c(-0.651853203773499, -0.291140735149384, 0.700231730937958, 
+0, -0.733647108078003, 0.475839525461197, -0.48511677980423, 
+0, -0.191960915923119, -0.829948306083679, -0.523772120475769, 
+0, 0, 0, 0, 1), .Dim = c(4L, 4L), zoom=0.6))
+
+# Overwrite RGL's inRows function to reduce the number of digits from 7 to 5
+inRows <- function(values, perrow, leadin="\t", digits=5) {
+  if (is.matrix(values)) values <- t(values)
+  values <- c(values)
+  if (is.numeric(values)) values <- formatC(values, digits = digits, width = 1)
+  len <- length(values)
+  if (len%%perrow != 0) values <- c(values, rep("PADDING", perrow - len%%perrow))
+  values <- matrix(values, ncol = perrow, byrow = TRUE)
+  lines <- paste(leadin, apply(values, 1, function(row) paste(row, collapse = ", ")))
+  lines[length(lines)] <- gsub(", PADDING", "", lines[length(lines)])
+  paste(lines, collapse = ",\n")
+}
+environment(inRows) <- asNamespace('rgl')
+assignInNamespace('inRows', inRows, ns='rgl')
+
+plotg<-function(groups) {
+  clear3d(); plot3d(zm_clust, k=9, groups=groups, soma=T, lwd=3)
+  plot3d(zm, lwd=.25, col='grey', skipRedraw = T)
+}
+```
+
+
+```{r meta-knitr, echo=FALSE, eval=FALSE}
+chunks <- sapply(1:8, function(x) {
+  paste0("```{r pairwise-", x, ", webgl=TRUE, cache=TRUE}\nplotg(c(", x, ",", x+1, "))\n```\n")
+})
+cat(chunks, sep="\n")
+```
+
+Let's plot a dendrogram of all the neurons, coloured into 9 groups.
+```{r dendrogram, cache=TRUE, fig.width=10}
+d=color_branches(zm_clust,k=9)
+plot(d)
+```
+
+Now let's plot pairwise combinations of groups, in 3D.
+```{r pairwise-1, webgl=TRUE, cache=TRUE}
+plotg(c(1,2))
+```
+
+```{r pairwise-2, webgl=TRUE, cache=TRUE}
+plotg(c(2,3))
+```
+
+```{r pairwise-3, webgl=TRUE, cache=TRUE}
+plotg(c(3,4))
+```
+
+```{r pairwise-4, webgl=TRUE, cache=TRUE}
+plotg(c(4,5))
+```
+
+```{r pairwise-5, webgl=TRUE, cache=TRUE}
+plotg(c(5,6))
+```
+
+```{r pairwise-6, webgl=TRUE, cache=TRUE}
+plotg(c(6,7))
+```
+
+```{r pairwise-7, webgl=TRUE, cache=TRUE}
+plotg(c(7,8))
+```
+
+```{r pairwise-8, webgl=TRUE, cache=TRUE}
+plotg(c(8,9))
 ```
