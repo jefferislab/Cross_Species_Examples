@@ -80,6 +80,10 @@ df$cluster=factor(sub("([a-zA-Z]+)-.*","\\1",df$name))
 df$gene[grep("-T",df$name)]="tbx21"
 rownames(df)=df$name
 zm=read.neurons("pruned-swc", neuronnames = df$name, df=df)
+
+# Tidy up class names and add them to metadata
+zm[,'class']=str_match(names(zm), "([A-z]*-T?L?).*")[,2]
+zm[,'class']=sub("-", "", zm[,'class'])
 ```
 
 As a check, let's plot all neurons from one cluster, coloured by transgene.
@@ -92,6 +96,8 @@ plot3d(zm, cluster=='mdG', col=gene, lwd=2, soma=T)
 We should mirror all neurons past middle of x range, for better comparison later.
 Miyasaka et al analyse the projection patterns in two domains.
 ```{r bounding-boxes, cache=TRUE}
+# NB this will find the boundingbox of the foreground voxels in the mask 
+# (not the whole 3d image)
 mask.box=read.im3d("mask-box.nrrd",ReadByteAsRaw=TRUE)
 mask.box.coords=imexpand.grid(mask.box)[mask.box>0,]
 mask.box.bbox=apply(mask.box.coords,2,range)
@@ -99,10 +105,6 @@ mask.box.bbox=apply(mask.box.coords,2,range)
 mask.box.vTel=read.im3d("mask-box-vTel.nrrd",ReadByteAsRaw=TRUE)
 mask.box.vTel.coords=imexpand.grid(mask.box.vTel)[mask.box.vTel>0,]
 mask.box.vTel.bbox=apply(mask.box.vTel.coords,2,range)
-
-bbox2sel3d<-function(b) {
-  rfun<-function(x, y=NULL, z=NULL) with(xyz.coords(x,y,z), b[1,1]<=x & x<=b[2,1] & b[1,2]<=y & y<=b[2,2] & b[1,3]<=z & z<=b[2,3])
-}
 ```
 
 ```{r mirror, cache=TRUE}
@@ -118,86 +120,86 @@ zm[neurons_to_mirror] <- mirror(zm[neurons_to_mirror], warpfile="mirroring_regis
 We should first resample our neurons to 1 micron spacing, convert to ``dotprops`` objects and tidy up class names.
 ```{r resample, cache=TRUE}
 zmdps <- dotprops(zm, k=5, resample=1)
-zm_class <- sub("-", "", str_match(names(zm), "[A-z]*-T?L?"))
+```
+## NBLAST clustering of complete neurons
+Let's calculate NBLAST scores and hierarchically cluster
+```{r nblast, cache=TRUE}
+zm_res <- nblast_allbyall(zmdps)
+zm_clust <- nhclust(scoremat=zm_res)
 ```
 
-Let's calculate NBLAST scores, discarding self matches.
-```{r nblast}
-zm_res <- nblast(zmdps, zmdps)
-zm_res_norm <- scale(zm_res, center=FALSE, scale=diag(zm_res))
-zm_res_mean <- (zm_res_norm + t(zm_res_norm)) / 2
-diag(zm_res_norm) <- NA
-diag(zm_res_mean) <- NA
-```
-
-Now convert NBLAST scores to lists and sort.
-```{r nblast-sort}
-zm_res_list <- apply(zm_res_norm, 2, list)
-zm_res_list <- lapply(zm_res_list, function(x) sort(x[[1]], decreasing=TRUE))
-zm_res_list <- zm_res_list[order(sapply(zm_res_list, function(x) x[[1]]), decreasing=TRUE)]
-
-zm_res_mean_list <- apply(zm_res_mean, 2, list)
-zm_res_mean_list <- lapply(zm_res_mean_list, function(x) sort(x[[1]], decreasing=TRUE))
-zm_res_mean_list <- zm_res_mean_list[order(sapply(zm_res_mean_list, function(x) x[[1]]), decreasing=TRUE)]
-```
-
-Convert scores to distances and hierarchically cluster.
+Now let's make some nice dendrograms
 ```{r hclust, dev='pdf'}
-zm_res_mean_dist <- 1 - zm_res_mean
-diag(zm_res_mean_dist) <- 0
-zm_res_mean_dist <- as.dist(zm_res_mean_dist)
-zm_clust <- hclust(zm_res_mean_dist)
 zm_dend <- as.dendrogram(zm_clust)
 
 zm_cols <- c(maG="#3635fd", dG="#f08380", vaG="#df20be", lG="#6e9d3f", vpG="#6a6d26", mdGT="#87b3d8", mdGL="#dea76f", vmG="#454545")
 par(mar=c(3,1,1,5))
-zm_dend_col=set_leaf_colors(zm_dend, structure(zm_cols[zm_class],.Names=names(zm)), col_to_set='label')
+zm_dend_col=set_leaf_colors(zm_dend, structure(zm_cols[zm[,'class']],.Names=names(zm)), col_to_set='label')
 zm_dend_col=color_clusters(zm_dend_col,k=4,col=rep('black',4),groupLabels=as.roman)
-plot(zm_dend_col, horiz=TRUE)
+labels(zm_dend_col)=zm[labels(zm_dend_col),'class']
+# to match ordering in Miyasaka et al
+plot(rev(zm_dend_col), horiz=TRUE)
 ```
 
-# Masked neurons
-Miyasaka et al analyse the projection patterns in two domains.
-```{r bounding-boxes, cache=TRUE}
-mask.box=read.im3d("mask-box.nrrd",ReadByteAsRaw=TRUE)
-mask.box.coords=imexpand.grid(mask.box)[mask.box>0,]
-mask.box.bbox=apply(mask.box.coords,2,range)
+## Masked neurons
 
-mask.box.vTel=read.im3d("mask-box-vTel.nrrd",ReadByteAsRaw=TRUE)
-mask.box.vTel.coords=imexpand.grid(mask.box.vTel)[mask.box.vTel>0,]
-mask.box.vTel.bbox=apply(mask.box.vTel.coords,2,range)
-
+### Preparation
+Let's mask our neurons to match Fig 3 with either the pTel or vTel region
+```{r mask, cache=TRUE}
+# define a function to convert bounding box to rgl style select3d function
 bbox2sel3d<-function(b) {
   rfun<-function(x, y=NULL, z=NULL) with(xyz.coords(x,y,z), b[1,1]<=x & x<=b[2,1] & b[1,2]<=y & y<=b[2,2] & b[1,3]<=z & z<=b[2,3])
 }
-```
 
-Let's mask our neurons to match.
-```{r mask, cache=TRUE}
 zm.mask=nlapply(zmdps, function(x) subset(x, bbox2sel3d(mask.box.bbox)))
 zm.mask.vTel=nlapply(zmdps, function(x) subset(x, bbox2sel3d(mask.box.vTel.bbox)))
+npoints=sapply(zm.mask.vTel, function(x) nrow(xyzmatrix(x)))
+# need at least 5 points to be inside mask
+zm.mask.vTel=zm.mask.vTel[npoints>=5]
 ```
 
-Let's redo our NBLAST comparison using the masked neurons, discarding self-matches.
-```{r nblast-masked, cache=TRUE}
-zm_res_masked <- nblast(zm.mask, zm.mask)
-zm_res_norm_masked <- scale(zm_res_masked, center=FALSE, scale=diag(zm_res_masked))
-zm_res_mean_masked <- (zm_res_norm_masked + t(zm_res_norm_masked)) / 2
-diag(zm_res_norm_masked) <- NA
-diag(zm_res_mean_masked) <- NA
+Let's see which neurons sit within each region. pTel is the larger region.
+```{r plot-masks, rgl=TRUE}
+clear3d()
+plot3d(zm, col=factor(class), colpal=zm_cols, lwd=2)
+plot3d(boundingbox(mask.box.bbox))
+plot3d(boundingbox(mask.box.vTel.bbox))
+par3d(userMatrix=structure(c(0.439136028289795, -0.0738524496555328, 0.895379900932312, 
+0, 0.897179543972015, 0.0884123295545578, -0.432726293802261, 
+0, -0.0472047030925751, 0.993342697620392, 0.105083927512169, 
+0, 0, 0, 0, 1), .Dim = c(4L, 4L)), zoom=0.6)
+```
+
+### pTel mask only
+Let's redo our NBLAST comparison using the pTel masked neurons
+```{r nblast-pTel, cache=TRUE}
+zm_res_pTel <- nblast_allbyall(zm.mask)
+zm_clust_pTel <- nhclust(scoremat=zm_res_pTel)
 ```
 
 Convert scores to distances and hierarchically cluster.
-```{r masked-hclust, dev='pdf'}
-zm_res_mean_dist_masked <- 1 - zm_res_mean_masked
-diag(zm_res_mean_dist_masked) <- 0
-zm_res_mean_dist_masked <- as.dist(zm_res_mean_dist_masked)
-zm_clust_masked <- hclust(zm_res_mean_dist_masked)
-zm_dend_masked <- as.dendrogram(zm_clust_masked)
+```{r pTel-hclust, dev='pdf'}
+zm_dend_pTel <- as.dendrogram(zm_clust_pTel)
+zm_dend_col_pTel=set_leaf_colors(zm_dend_pTel, structure(zm_cols[zm[,'class']],.Names=names(zm)), col_to_set='label')
+zm_dend_col_pTel=color_clusters(zm_dend_col_pTel,k=4,col=rep('black',4),groupLabels=as.roman)
+labels(zm_dend_col_pTel)=zm[labels(zm_dend_col_pTel),'class']
+# to match ordering in Miyasaka et al
+plot(rev(zm_dend_col_pTel), horiz=TRUE)
+```
 
-zm_cols <- c(maG="#3635fd", dG="#f08380", vaG="#df20be", lG="#6e9d3f", vpG="#6a6d26", mdGT="#87b3d8", mdGL="#dea76f", vmG="#454545")
-par(mar=c(3,1,1,5))
-zm_dend_col_masked=set_leaf_colors(zm_dend_masked, structure(zm_cols[zm_class],.Names=names(zm)), col_to_set='label')
-zm_dend_col_masked=color_clusters(zm_dend_col_masked,k=4,col=rep('black',4),groupLabels=as.roman)
-plot(zm_dend_col_masked, horiz=TRUE)
+### vTel mask only
+Let's redo our NBLAST comparison using the vTel masked neurons
+```{r nblast-vTel, cache=TRUE}
+zm_res_vTel <- nblast_allbyall(zm.mask.vTel)
+zm_clust_vTel <- nhclust(scoremat=zm_res_vTel)
+```
+
+Convert scores to distances and hierarchically cluster.
+```{r vTel-hclust, dev='pdf'}
+zm_dend_vTel <- as.dendrogram(zm_clust_vTel)
+zm_dend_col_vTel=set_leaf_colors(zm_dend_vTel, structure(zm_cols[zm.mask.vTel[,'class']],.Names=names(zm.mask.vTel)), col_to_set='label')
+zm_dend_col_vTel=color_clusters(zm_dend_col_vTel,k=4,col=rep('black',4),groupLabels=as.roman)
+labels(zm_dend_col_vTel)=zm[labels(zm_dend_col_vTel),'class']
+# to match ordering in Miyasaka et al
+plot(rev(zm_dend_col_vTel), horiz=TRUE)
 ```
