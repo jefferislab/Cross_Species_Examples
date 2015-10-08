@@ -28,7 +28,7 @@ other R terminal.
 
 ```{r install, eval=F}
 # install standard package from CRAN
-install.packages(c("nat.nblast","stringr","dendroextras","knitr"))
+install.packages(c("nat.nblast","stringr","dendextend","knitr"))
 
 # install catmaid package from github with devtools
 if (!require("devtools")) install.packages("devtools")
@@ -43,7 +43,7 @@ First let's do some basic setup, loading the necessary R packages.
 library(catmaid)
 library(nat.nblast)
 library(stringr)
-library(dendroextras)
+library(dendextend)
 library(knitr)
 
 # so that we can make snapshots of 3d plots or include interactive 3d
@@ -83,41 +83,160 @@ view3d(270,-90, fov=0, zoom=.65)
 
 # NBLAST
 
-We're going to try using NBLAST with these data. We need to convert them to 
-the `dotprops` format. We convert the neurons from nanometre to micron spatial
-units and resample every 1 µm.
+We're going to try using NBLAST with these data. We need to convert them to the
+`dotprops` format, a simplified vector cloud representation. We also convert the
+neurons from nanometre to micron spatial units and resample every 1 µm. The
+reason we need units of microns is that NBLAST scoring matrices include a
+spatial component. Rather than retrain a new NBLAST scoring matrix, we just use
+the one trained on adult brain data, which still works well with larval neurons.
 
 ```{r, results='hide', cache=TRUE}
 # convert from nm to microns 
 bgc.dps=dotprops(bgc/1000, resample=1, .progress='text')
 ```
 
-We'll compute all by all nblast scores and use them for clustering.
+Now we compute all by all nblast scores and use them for clustering.
 ```{r nblast all by all}
 bgsmat=nblast_allbyall(bgc.dps)
 bghc=nhclust(scoremat = bgsmat)
 plot(bghc)
+```
 
+Now we can pretty up the dendrogram by labelling clusters.
+```{r}
 # make a copy and label with name rather than skid
 bghc2=bghc
 bghc2$labels=with(bgc, name)
-# cut the 
-bghcd=colour_clusters(bghc2, h=2)
+# cut the dendrogram at a height of 2 
+# empirically with adult data this separates neurons into closely related classes
+# but does not resolve the finest level of neuronal types.
+bghcd=colour_branches(bghc2, h=2, col = rainbow)
 par(mar=c(8,4,4,2))
 plot(bghcd)
 ```
 
+Now we can plot the neurons coloured by cluster
 ```{r plot3d by cluster, rgl=TRUE}
 open3d();wire3d(l1mesh, col='grey', size=.1)
 view3d(270,-90, fov=0, zoom=.65)
 plot3d(bghc, db=bgc, h=2, WithC=F, soma=2e3)
 ```
 
-Try plotting with points rather than mesh and output as interactive webgl canvas:
+Try plotting the brain surface with points rather than mesh and output as interactive webgl canvas:
 
 ```{r, webgl=TRUE}
-open3d();points3d(l1surf, col='grey', size=.1)
+open3d();dot3d(l1mesh, col='grey', size=.1)
 plot3d(bghc, db=bgc, h=2, WithC=F, soma=2e3)
 view3d(270, 0)
 ```
 
+Compare with clustering by synaptic connectivity. This uses just the default 2
+predictors.
+```{r}
+bgcpa=read.csv("basin_goro_circuit_plot_all.csv")
+rownames(bgcpa)=bgcpa$skeleton_id
+bgdf=merge(bgc[,], bgcpa, by.x="skid", by.y="skeleton_id")
+rownames(bgdf)=bgdf$skid
+bgdf=bgdf[names(bgc),]
+hcsyn=hclust(dist(bgdf[,c("Signal.Flow","Eigenvalue.0.14")]))
+hcsyn$labels=bgdf$skid
+plot(hcsyn, labels=bgdf$name)
+```
+
+```{r}
+plot(bgdf[,c("Signal.Flow","Eigenvalue.0.14")], type='n')
+text(bgdf[,c("Signal.Flow","Eigenvalue.0.14")], bgdf$name)
+text(bgdf[,c("Signal.Flow","Eigenvalue.0.14")], bgdf$name,col=rainbow(8)[cutree(hcsyn, k=8)])
+```
+
+Repeat, using all predictors:
+
+```{r}
+hcsyn2=hclust(dist(bgdf[,-(1:5)]))
+plot(hcsyn2, labels=bgdf$name)
+```
+
+Try again, but PCA first:
+
+```{r}
+pc=prcomp(bgdf[,-(1:5)], scale. = T)
+plot(pc)
+hcsyn3=hclust(dist(pc$x[,1:5]))
+plot(hcsyn3, labels=bgdf$name)
+```
+
+Actually those include a wide variety of morphological properties. Just restrict
+to network properties:
+```{r}
+pc2=prcomp(bgdf[,6:19], scale. = T)
+plot(pc2)
+hcsyn4=hclust(dist(pc2$x[,1:4]))
+# set labels since prcomp results lost them
+hcsyn4$labels=names(bgc)
+plot(hcsyn4)
+```
+
+Colour dendrogram with dendextend (prettier colours)
+
+```{r}
+dsyn=color_branches(hcsyn, k=8, col=rainbow)
+labels(dsyn)<-bgdf[labels(dsyn),'name']
+
+dsyn4=color_branches(hcsyn4, k=8, col=rainbow)
+labels(dsyn4)<-bgdf[labels(dsyn4),'name']
+plot(dsyn4)
+```
+
+```{r}
+tanglegram(dsyn, dsyn4, margin_inner=10)
+```
+
+
+
+Tanglegram:
+```{r}
+tanglegram(bghcd, dsyn4, margin_inner=10)
+```
+
+Let's try pruning the neurons removing 1st and 2nd order terminal branches
+
+```{r prune, cache=T}
+bgc.pruned=nlapply(bgc, prune_strahler)
+bgc.pruned.dps=dotprops(bgc.pruned/1000, resample=1)
+```
+
+```{r cluster pruned, message=FALSE}
+bgsmat.pruned=nblast_allbyall(bgc.pruned.dps)
+bghc.pruned=nhclust(scoremat = bgsmat.pruned)
+
+bghc.pruned.l=bghc.pruned
+bghc.pruned.l$labels=as.character(bgdf[bghc.pruned.l$labels,'name'])
+bghcd.pruned=dendroextras::color_clusters(bghc.pruned.l, k=8)
+plot(bghcd.pruned)
+```
+
+Tanglegram:
+```{r}
+tanglegram(bghcd, bghcd.pruned, margin_inner=10)
+```
+
+Repeat removing only 1st order terminal branches
+
+```{r prune1, cache=T}
+bgc.pruned1=nlapply(bgc, prune_strahler, orderstoprune=1)
+bgc.pruned1.dps=dotprops(bgc.pruned1/1000, resample=1)
+```
+
+```{r cluster pruned1, message=FALSE}
+bgsmat.pruned1=nblast_allbyall(bgc.pruned1.dps)
+bghc.pruned1=nhclust(scoremat = bgsmat.pruned1)
+
+bghcd.pruned1=dendroextras::color_clusters(bghc.pruned1, k=8)
+labels(bghcd.pruned1)<-bgdf[labels(bghcd.pruned1),'name']
+plot(bghcd.pruned1)
+tanglegram(bghcd.pruned, bghcd.pruned1, margin_inner=10)
+```
+
+```{r}
+tanglegram(dsyn4, bghcd, margin_inner=10)
+```
