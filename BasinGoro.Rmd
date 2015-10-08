@@ -240,3 +240,31 @@ tanglegram(bghcd.pruned, bghcd.pruned1, margin_inner=10)
 ```{r}
 tanglegram(dsyn4, bghcd, margin_inner=10)
 ```
+
+
+# For figure
+```{r original_clustering_3d, rgl=TRUE}
+clear3d()
+view3d(270,-90, fov=0, zoom=.65)
+plot3d(bghc, db=bgc, k=8, WithConn=F, soma=2000, lwd=1.5)
+```
+
+```{r network_tanglegram, dev='pdf'}
+tanglegram(dsyn4, bghcd, margin_inner=8, margin_outer=8, columns_width = c(4,1.5,4))
+```
+
+```{r network_clustering_3d, rgl=TRUE}
+clear3d()
+view3d(270,-90, fov=0, zoom=.65)
+plot3d(hcsyn4, db=bgc, k=8, WithConn=F, soma=2000, lwd=1.5)
+```
+
+```{r pruned_tanglegram, dev='pdf'}
+tanglegram(bghcd, bghcd.pruned, margin_inner=8, margin_outer=8, columns_width = c(4,1.5,4))
+```
+
+```{r pruned_clustering_3d, rgl=TRUE}
+clear3d()
+view3d(270,-90, fov=0, zoom=.65)
+plot3d(bghc.pruned, db=bgc, k=8, WithConn=F, soma=2000, lwd=1.5)
+```
