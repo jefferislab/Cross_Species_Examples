@@ -149,7 +149,7 @@ Let's make a plot where we just colour neurons by side of brain (as determined b
 clear3d()
 # nb plot slightly thicker lines and use a radius of 5 µm for the soma
 plot3d(subset(tedoren, Species=="Danaus plexippus"), lwd=2, soma=5)
-view3d(270,-90, fov=0, zoom=.65)
+view3d(0,-90, fov=0, zoom=.65)
 ```
 
 # NBLAST
