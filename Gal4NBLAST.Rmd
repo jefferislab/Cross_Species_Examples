@@ -96,7 +96,8 @@ Now we can open those lines in the stack browser as follows:
 top5=names(hits[1:5])
 top5
 gmrhits.vfbids=vfb_tovfbids(paste0("GMR_",top5,"*"), fixed = FALSE)
-u=vfb_stack_url(c(gmrhits.vfbids, mal20.vfbids), add = FALSE)
+# pick 5 gmr lines and 5 query neurons
+u=vfb_stack_url(c(gmrhits.vfbids, mal20.vfbids[1:5]))
 u
 ```
 
