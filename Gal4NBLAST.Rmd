@@ -1,0 +1,108 @@
+---
+title: "Gal4 NBLAST"
+author: "Gregory Jefferis"
+date: "17 November 2015"
+output:
+  html_document:
+    pandoc_args: [
+      "+RTS", "-K640m",
+      "-RTS"
+    ]
+---
+
+# Preface
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents.
+For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+What you will see in the rest of the document is a mixture of text and R code along with the visualisations and analysis produced from that code.
+You can compile the whole document to an HTML document by hitting **Knit HTML** in RStudio.
+You can also explore what is happening by running code interactively line by line in an R console.
+
+# Setup
+## Installation
+Before running this script, you need to install packages.
+It's a good idea to do this from an interactive R session in case of any problems.
+This code block will not be run when you click Knit HTML, but you can copy paste into your RStudio or other R terminal.
+
+```{r install, eval=F}
+# install standard package from CRAN
+if(!require('nat.nblast')) install.packages("nat.nblast")
+if(!require('stringr')) install.packages("stringr")
+if(!require('devtools')) install.packages("devtools")
+if(!require('flycircuit')) devtools::install_github("jefferis/flycircuit")
+if(!require('vfbr')) devtools::install_github("jefferis/vfbr")
+```
+
+## Load packages
+First let's do some basic setup, loading the necessary R packages.
+```{r setup, results='hide', message=FALSE}
+library(nat)
+library(flycircuit)
+library(knitr)
+library(vfbr)
+# so that we can make snapshots of 3d plots or include interactive 3d
+knit_hooks$set(rgl=hook_rgl, webgl=hook_webgl)
+```
+
+# Data
+## Define functions
+```{r}
+
+```
+
+
+## Load Data
+Now let's use the flycircuit package to fetch the pre-computed search data from
+the flybrain server.
+
+```{r data, cache=FALSE, results='hide'}
+scall.sampled=load_si_data('scall.sampled.rds')
+```
+
+# NBLAST
+## mAL neurons
+
+These neurons are also called aDT1 or aDT-b neurons. We are only going to look
+for female neurons since the GMR GAL4 lines were imaged in females.
+```{r nblast mAL neurons}
+mal=fc_gene_name(subset(annotation, grepl("aDT-b.*female", text))$neuron_idid)
+# pick 20
+set.seed(1)
+mal20=sample(mal, 20)
+```
+
+We could look at these neurons by going to this url:
+
+```{r}
+library(vfbr)
+mal20.vfbids=vfb_tovfbids(fc_neuron(mal20))
+vfb_3dbrowser_url(mal20.vfbids)
+```
+
+Now let's collect the results for these mAL neurons. We'll get the top 10 Gal4 
+lines for each of the 20 neurons and then pick the lines with the most representation.
+
+```{r}
+library(stringr)
+mal20.sc=lapply(mal20, function(x) sort(scall.sampled[,x],decreasing = TRUE)[1:10])
+mal20.top10s=unlist(lapply(mal20.sc, names))
+hits=sort(table(str_extract(mal20.top10s, "[0-9]{2}[A-H][0-9]{2}")), decreasing = TRUE)
+hits
+```
+
+Now we can open those lines in the stack browser as follows:
+
+```{r}
+top5=names(hits[1:5])
+top5
+gmrhits.vfbids=vfb_tovfbids(paste0("GMR_",top5,"*"), fixed = FALSE)
+u=vfb_stack_url(c(gmrhits.vfbids, mal20.vfbids), add = FALSE)
+u
+```
+
+and open that url from R
+
+```{r, eval=FALSE}
+browseURL(u)
+```
+
