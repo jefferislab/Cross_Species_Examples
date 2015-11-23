@@ -88,7 +88,7 @@ read.tedore.neuron<-function(x, baseurl="http://www.tedore.net/", ...) {
     nt=rvest::html_text(rvest::html_nodes(n, "dd, dt"))
     model_node=grep("3-D model", nt)
     filename=nt[model_node+1]
-    if(length(filename)) url=file.path(baseurl,"media/neurons",nid,"reconstruction", filename)
+    if(length(filename)) url=file.path("https://insect-brains.s3.eu-central-1.amazonaws.com","media/neurons",nid,"reconstruction", filename)
   }
   if(!length(url))
     stop("Unable to find unique url for 3d neuron model")
