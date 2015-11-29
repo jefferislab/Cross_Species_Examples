@@ -257,7 +257,7 @@ cat(chunks, sep="\n")
 
 Let's plot a dendrogram of all the neurons, coloured into 9 groups.
 ```{r dendrogram, cache=TRUE, fig.width=10}
-d=color_branches(zm_clust,k=9)
+d=color_branches(zm_clust,k=9, groupLabels=as.numeric)
 plot(d)
 ```
 
