@@ -28,7 +28,7 @@ other R terminal.
 
 ```{r install, eval=F}
 # install standard package from CRAN
-install.packages(c("nat.nblast","stringr","dendextend","knitr"))
+install.packages(c("nat.nblast","stringr","dendextend","rgl", "knitr"))
 
 # install catmaid package from github with devtools
 if (!require("devtools")) install.packages("devtools")
@@ -44,6 +44,7 @@ library(catmaid)
 library(nat.nblast)
 library(stringr)
 library(dendextend)
+library(rgl)
 library(knitr)
 
 # so that we can make snapshots of 3d plots or include interactive 3d
