@@ -57,7 +57,7 @@ We need to define a function to read neurons from the insect brain db website
 #' @param ... additional arguments passed to read.neuron
 #' @examples
 #' nn=read.neurons()
-read.tedore.neuron<-function(x, baseurl="http://www.tedore.net/", ...) {
+read.tedore.neuron<-function(x, baseurl="http://insectbraindb.org/", ...) {
   # complete url for input spec if required
   if(is.character(x) && substr(x,1,4)=="NIN-") {
    x=as.numeric(substr(x, 5, nchar(x)))
@@ -105,7 +105,7 @@ We'll start by making a table containing information about all the neurons.
 ```{r data, cache=TRUE, results='hide'}
 library(rvest)
 # table of information about available neurons
-neurons_table=html_table(read_html("http://www.tedore.net/neurons/"), header=T)[[1]]
+neurons_table=html_table(read_html("http://insectbraindb.org/neurons/"), header=T)[[1]]
 # tidy up column / row names for R
 names(neurons_table)=make.names(names(neurons_table))
 rownames(neurons_table)=neurons_table$Identification.Number
@@ -133,7 +133,7 @@ Options to read the wavefront obj format in which this is encoded have only rece
 # newest versions of rgl package can read wavefront obj files.
 if(exists("readOBJ", 'package:rgl')){
   if(!file.exists('monarch_brain_optimized_hh1SWlD.obj'))
-    download.file("http://www.tedore.net/media/brain-models/5/monarch_brain_optimized_hh1SWlD.obj", 
+    download.file("http://insectbraindb.org/media/brain-models/5/monarch_brain_optimized_hh1SWlD.obj", 
                   destfile = 'monarch_brain_optimized_hh1SWlD.obj')
   monarch_cc.surf=rgl::readOBJ("monarch_brain_optimized_hh1SWlD.obj")
 } else {
