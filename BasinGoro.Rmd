@@ -28,7 +28,7 @@ other R terminal.
 
 ```{r install, eval=F}
 # install standard package from CRAN
-install.packages(c("nat.nblast","stringr","dendextend","rgl", "knitr"))
+install.packages(c("nat.nblast","stringr","dendextend","rgl","knitr", "rglwidget"))
 
 # install catmaid package from github with devtools
 if (!require("devtools")) install.packages("devtools")
@@ -46,6 +46,7 @@ library(stringr)
 library(dendextend)
 library(rgl)
 library(knitr)
+library(rglwidget)
 
 # so that we can make snapshots of 3d plots or include interactive 3d
 knit_hooks$set(rgl=hook_rgl, webgl=hook_webgl)
@@ -71,6 +72,9 @@ as an extra column in the attached data.frame
 # fix data.frames
 bgc[,'side']=str_match(str_match(bgc[,'name'],'[at][1-9][lr]|[LRlr]$'), "[LRlr]")
 bgc[,'side']=factor(toupper(bgc[,'side']))
+#shorten 2 of the neuron names
+bgc[29,'name']<-"basin-rel desc1 sog_l"
+bgc[34,'name']<-"basin-rel desc1 sog_r"
 ```
 
 ## Basic plot of data
@@ -251,7 +255,7 @@ plot3d(bghc, db=bgc, k=8, WithConn=F, soma=2000, lwd=1.5)
 ```
 
 ```{r network_tanglegram, dev='pdf'}
-tanglegram(dsyn4, bghcd, margin_inner=8, margin_outer=8, columns_width = c(4,1.5,4))
+tanglegram(dsyn4, bghcd, margin_inner=9, margin_outer=8, columns_width = c(4,1.5,4))
 ```
 
 ```{r network_clustering_3d, rgl=TRUE}
@@ -261,7 +265,7 @@ plot3d(hcsyn4, db=bgc, k=8, WithConn=F, soma=2000, lwd=1.5)
 ```
 
 ```{r pruned_tanglegram, dev='pdf'}
-tanglegram(bghcd, bghcd.pruned, margin_inner=8, margin_outer=8, columns_width = c(4,1.5,4))
+tanglegram(bghcd, bghcd.pruned, margin_inner=9, margin_outer=8, columns_width = c(4,1.5,4))
 ```
 
 ```{r pruned_clustering_3d, rgl=TRUE}
